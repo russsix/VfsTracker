@@ -4,6 +4,7 @@ import json
 import tls_client
 import requests
 import logging
+from telegram import Bot
 import re
 
 # Настройка логирования
@@ -26,6 +27,8 @@ PASSWORD = os.getenv("PASSWORD")
 TELEGRAM_BOT_TOKEN = "6111909478:AAHw4LngDMHZSxAQ8w_guKvYMFusDE9boU8"
 TELEGRAM_CHAT_ID = "-1001702592627"
 
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
+
 def escape_markdown(text: str) -> str:
     return re.sub(r'([*_`\[\]()~>#+\-=|{}.!])', r'\\\1', text)
 
@@ -36,11 +39,11 @@ def send_cookies_to_telegram(cookies_dict):
             escaped_cookie_name = escape_markdown(cookie_name)
             escaped_cookie_value = escape_markdown(cookie_value)
             message = f"**{escaped_cookie_name}:** `{escaped_cookie_value}`"
-
+            
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
             data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
             response = requests.post(url, json=data)
-
+            
             if response.status_code == 200:
                 logging.info(f"✅ Куки '{cookie_name}' отправлены в Telegram")
             else:
@@ -54,13 +57,13 @@ def create_session():
 def wait_for_cfwaitingroom(session):
     """ Ожидание появления куки __cfwaitingroom__cf_wr """
     logging.info("⏳ Ожидание прохождения комнаты ожидания... Проверяем каждую минуту.")
-
+    
     while True:
         response = session.get(PAGE_URL, headers=HEADERS)
         session_cookies = session.cookies.get_dict()
-
+        
         logging.info(f"🔍 Текущие куки: {json.dumps(session_cookies, indent=4, ensure_ascii=False)}")
-
+        
         if "__cfwaitingroom__cf_wr" in session_cookies:
             logging.info("✅ Комната ожидания пройдена!")
             send_cookies_to_telegram({"__cfwaitingroom__cf_wr": session_cookies["__cfwaitingroom__cf_wr"]})
@@ -75,18 +78,18 @@ def fetch_cookies(session):
         logging.info("🔄 Загружаем страницу...")
         response = session.get(PAGE_URL, headers=HEADERS)
         session_cookies = session.cookies.get_dict()
-
+        
         logging.info(f"🔍 Текущие куки: {json.dumps(session_cookies, indent=4, ensure_ascii=False)}")
-
+        
         if "__cfwaitingroom__cf_wr" not in session_cookies:
-            logging.warning("⚠️ Не найден куки __cfwaitingroom__cf_wr. Ждём, пока пройдет комнату ожидания.")
+            logging.warning("⚠️ Не найден куки __cfwaitingroom__cf_wr. Ждём, пока пройдет комната ожидания.")
             session_cookies = wait_for_cfwaitingroom(session)  # Ожидаем прохождение
 
         # Небольшая задержка перед продолжением, чтобы Cloudflare точно пропустил
         time.sleep(15)
-
+        
         send_cookies_to_telegram(session_cookies)
-
+        
         return True
     except Exception as e:
         logging.error(f"Ошибка загрузки страницы: {str(e)}")
@@ -98,7 +101,7 @@ def login(session):
         'username': EMAIL,
         'password': PASSWORD
     }
-
+    
     try:
         response = session.post(LOGIN_URL, json=payload, headers=HEADERS)
         if response.status_code == 200:
@@ -115,14 +118,14 @@ def login(session):
 def start_periodic_update():
     """ Основной цикл работы """
     session = create_session()
-
+    
     while True:
         if not fetch_cookies(session):
             logging.warning("🔄 Пересоздаём сессию...")
             session = create_session()
-
+        
         login(session)
-
+        
         logging.info("⏳ Ожидание 25 минут перед следующим обновлением...")
         time.sleep(1500)
 
